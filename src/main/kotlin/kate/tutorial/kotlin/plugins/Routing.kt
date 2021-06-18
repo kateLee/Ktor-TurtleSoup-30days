@@ -18,6 +18,15 @@ fun Application.configureRouting() {
         get("/") {
             call.respond(mapOf("message" to "HELLO WORLD!"))
         }
+        get("/api/puzzles/{id}") {
+            TODO()
+        }
+        post("/api/puzzles") {
+            TODO()
+        }
+        delete("/api/puzzles/{id}") {
+            TODO()
+        }
     }
 
 }
