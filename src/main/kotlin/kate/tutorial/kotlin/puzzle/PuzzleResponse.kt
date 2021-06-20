@@ -7,4 +7,5 @@ data class PuzzleResponse (
     val avatar: String,
     val title: String,
     val attendance: String,
+    val tags: String,
 )
