@@ -8,10 +8,13 @@ import io.ktor.http.*
 import io.ktor.request.*
 import io.ktor.response.*
 import kate.tutorial.kotlin.exceptions.BadParamException
+import kate.tutorial.kotlin.exceptions.IllegalPuzzleIdException
+import kate.tutorial.kotlin.exceptions.PuzzleNotFoundException
 import kate.tutorial.kotlin.puzzle.*
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
+import java.util.*
 
 fun Application.configureRouting() {
     // Starting point for a Ktor app:
@@ -22,6 +25,9 @@ fun Application.configureRouting() {
     install(StatusPages) {
         exception<BadParamException> { cause ->
             call.respond(HttpStatusCode.BadRequest, mapOf("message" to cause.message))
+        }
+        exception<PuzzleNotFoundException> { cause ->
+            call.respond(HttpStatusCode.NotFound, mapOf("message" to cause.message))
         }
     }
     Database.connect("jdbc:h2:mem:default;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver")
@@ -80,7 +86,20 @@ fun Application.configureRouting() {
             call.respond(puzzle)
         }
         get("/api/puzzles/{id}") {
-            TODO()
+            val puzzleId = try { UUID.fromString(call.parameters["id"]) } catch (e: Exception) { throw IllegalPuzzleIdException() }
+            val puzzle = transaction {
+                Puzzle.findById(puzzleId)?.run {
+                    PuzzleDetailResponse(
+                        id = puzzleId,
+                        title = title,
+                        avatar = avatar,
+                        author = author,
+                        description = description,
+                        tags = tags
+                    )
+                } ?: throw PuzzleNotFoundException()
+            }
+            call.respond(puzzle)
         }
         delete("/api/puzzles/{id}") {
             TODO()
