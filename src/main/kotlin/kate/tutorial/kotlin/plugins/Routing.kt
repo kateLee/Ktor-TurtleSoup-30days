@@ -4,10 +4,11 @@ import io.ktor.routing.*
 import io.ktor.application.*
 import io.ktor.features.*
 import io.ktor.gson.*
+import io.ktor.http.*
+import io.ktor.request.*
 import io.ktor.response.*
-import kate.tutorial.kotlin.puzzle.Puzzle
-import kate.tutorial.kotlin.puzzle.PuzzleResponse
-import kate.tutorial.kotlin.puzzle.Puzzles
+import kate.tutorial.kotlin.exceptions.BadParamException
+import kate.tutorial.kotlin.puzzle.*
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -16,6 +17,11 @@ fun Application.configureRouting() {
     // Starting point for a Ktor app:
     install(ContentNegotiation) {
         gson {
+        }
+    }
+    install(StatusPages) {
+        exception<BadParamException> { cause ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("message" to cause.message))
         }
     }
     Database.connect("jdbc:h2:mem:default;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver")
@@ -52,7 +58,26 @@ fun Application.configureRouting() {
             call.respond(response)
         }
         post("/api/puzzles") {
-            TODO()
+            val request = call.receive<PuzzleRequest>()
+            val puzzle = transaction {
+                Puzzle.new {
+                    author = "Kate"
+                    avatar = "https://imgur.com/l0swFL1.jpg"
+                    title = request.title ?: throw BadParamException()
+                    description = request.description ?: throw BadParamException()
+                    tags= request.tags ?: throw BadParamException()
+                }.run {
+                    PuzzleDetailResponse(
+                        id = id.value,
+                        title = title,
+                        avatar = avatar,
+                        author = author,
+                        description = description,
+                        tags = tags
+                    )
+                }
+            }
+            call.respond(puzzle)
         }
         get("/api/puzzles/{id}") {
             TODO()
