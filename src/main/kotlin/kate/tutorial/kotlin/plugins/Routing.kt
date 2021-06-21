@@ -102,7 +102,11 @@ fun Application.configureRouting() {
             call.respond(puzzle)
         }
         delete("/api/puzzles/{id}") {
-            TODO()
+            val puzzleId = try { UUID.fromString(call.parameters["id"]) } catch (e: Exception) { throw IllegalPuzzleIdException() }
+            transaction {
+                Puzzle.findById(puzzleId)?.delete() ?: throw PuzzleNotFoundException()
+            }
+            call.respond(HttpStatusCode.NoContent)
         }
     }
 
