@@ -11,6 +11,8 @@ import kate.tutorial.kotlin.exceptions.BadParamException
 import kate.tutorial.kotlin.exceptions.IllegalPuzzleIdException
 import kate.tutorial.kotlin.exceptions.PuzzleNotFoundException
 import kate.tutorial.kotlin.puzzle.*
+import kate.tutorial.kotlin.user.User
+import org.jetbrains.exposed.dao.with
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -35,10 +37,13 @@ fun Application.configureRouting() {
         SchemaUtils.create(Puzzles)
     }
     transaction {
+        val user = User.new {
+            name = "Kate"
+            avatar = "https://imgur.com/l0swFL1.jpg"
+        }
         for (i in 0..10) {
             Puzzle.new {
-                author = "Kate"
-                avatar = listOf("https://imgur.com/l0swFL1.jpg", "https://imgur.com/ICOyx7j.jpg").random()
+                author = user
                 title = "從前從前有碗" + listOf("海龜湯", "孟婆湯", "玉米湯", "南瓜湯").random()
                 description = "世界......\n需要更多力量......"
                 tags = listOf("原創", "動漫小說戲劇衍生", "驚悚", "生活").random()
@@ -51,11 +56,11 @@ fun Application.configureRouting() {
         }
         get("/api/puzzles") {
             val response = transaction {
-                Puzzle.all().map {
+                Puzzle.all().with(Puzzle::author).map {
                     PuzzleResponse(
                         id = it.id.value,
                         title = it.title,
-                        avatar = it.avatar,
+                        avatar = it.author.avatar,
                         attendance = (0..10).random().toString() + "人",
                         tags = it.tags
                     )
@@ -67,8 +72,7 @@ fun Application.configureRouting() {
             val request = call.receive<PuzzleRequest>()
             val puzzle = transaction {
                 Puzzle.new {
-                    author = "Kate"
-                    avatar = "https://imgur.com/l0swFL1.jpg"
+                    author = User.all().first()
                     title = request.title ?: throw BadParamException()
                     description = request.description ?: throw BadParamException()
                     tags= request.tags ?: throw BadParamException()
@@ -76,8 +80,8 @@ fun Application.configureRouting() {
                     PuzzleDetailResponse(
                         id = id.value,
                         title = title,
-                        avatar = avatar,
-                        author = author,
+                        avatar = author.avatar,
+                        author = author.name,
                         description = description,
                         tags = tags
                     )
@@ -92,8 +96,8 @@ fun Application.configureRouting() {
                     PuzzleDetailResponse(
                         id = puzzleId,
                         title = title,
-                        avatar = avatar,
-                        author = author,
+                        avatar = author.avatar,
+                        author = author.name,
                         description = description,
                         tags = tags
                     )
