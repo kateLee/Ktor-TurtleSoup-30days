@@ -1,12 +1,14 @@
 package kate.tutorial.kotlin.plugins
 
-import io.ktor.routing.*
 import io.ktor.application.*
 import io.ktor.features.*
 import io.ktor.gson.*
 import io.ktor.http.*
+import io.ktor.http.cio.websocket.*
 import io.ktor.request.*
 import io.ktor.response.*
+import io.ktor.routing.*
+import io.ktor.websocket.*
 import kate.tutorial.kotlin.exceptions.BadParamException
 import kate.tutorial.kotlin.exceptions.IllegalPuzzleIdException
 import kate.tutorial.kotlin.exceptions.PuzzleNotFoundException
@@ -16,6 +18,7 @@ import org.jetbrains.exposed.dao.with
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
+import java.time.Duration
 import java.util.*
 
 fun Application.configureRouting() {
@@ -32,6 +35,14 @@ fun Application.configureRouting() {
             call.respond(HttpStatusCode.NotFound, mapOf("message" to cause.message))
         }
     }
+
+    install(WebSockets) {
+        pingPeriod = Duration.ofSeconds(60) // Disabled (null) by default
+        timeout = Duration.ofSeconds(15)
+        maxFrameSize = Long.MAX_VALUE // Disabled (max value). The connection will be closed if surpassed this length.
+        masking = false
+    }
+
     Database.connect("jdbc:h2:mem:default;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver")
     transaction {
         SchemaUtils.create(Puzzles)
@@ -112,6 +123,17 @@ fun Application.configureRouting() {
             }
             call.respond(HttpStatusCode.NoContent)
         }
-    }
 
+        webSocket("/chat") {
+            for (frame in incoming) {
+                if (frame is Frame.Text)  {
+                    val text = frame.readText()
+                    outgoing.send(Frame.Text("[user]: $text"))
+                    if (text.equals("bye", ignoreCase = true)) {
+                        close(CloseReason(CloseReason.Codes.NORMAL, "Client said BYE"))
+                    }
+                }
+            }
+        }
+    }
 }
