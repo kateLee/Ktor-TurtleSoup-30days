@@ -1,11 +1,10 @@
 package kate.tutorial.kotlin
 
-import io.ktor.server.engine.*
-import io.ktor.server.netty.*
+import io.ktor.application.*
 import kate.tutorial.kotlin.plugins.*
 
-fun main() {
-    embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
-        configureRouting()
-    }.start(wait = true)
+fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
+
+fun Application.module(testing: Boolean = false) {
+    configureRouting()
 }

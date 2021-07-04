@@ -5,7 +5,7 @@ val logback_version: String by project
 
 plugins {
     application
-    kotlin("jvm") version "1.5.10"
+    kotlin("jvm") version "1.5.20"
 }
 
 group = "kate.tutorial.kotlin"
@@ -19,7 +19,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.ktor:ktor-server-core:$ktor_version")
+    implementation(kotlin("stdlib"))
     implementation("io.ktor:ktor-server-netty:$ktor_version")
     implementation("io.ktor:ktor-gson:$ktor_version")
     implementation("io.ktor:ktor-websockets:$ktor_version")
