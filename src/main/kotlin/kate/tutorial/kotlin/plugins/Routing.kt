@@ -1,5 +1,11 @@
 package kate.tutorial.kotlin.plugins
 
+import com.google.auth.oauth2.GoogleCredentials
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.messaging.Message
+import com.google.firebase.messaging.Notification
 import io.ktor.application.*
 import io.ktor.features.*
 import io.ktor.gson.*
@@ -61,6 +67,13 @@ fun Application.configureRouting() {
             }
         }
     }
+
+    val serviceAccount = Application::class.java.getResourceAsStream("/Your-firebase-adminsdk-xxx.json")
+    val options = FirebaseOptions.builder()
+        .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+        .build()
+    FirebaseApp.initializeApp(options)
+
     routing {
         get("/") {
             call.respond(mapOf("message" to "HELLO WORLD!"))
@@ -122,6 +135,21 @@ fun Application.configureRouting() {
                 Puzzle.findById(puzzleId)?.delete() ?: throw PuzzleNotFoundException()
             }
             call.respond(HttpStatusCode.NoContent)
+        }
+
+        get("/api/messages") {
+            val message: Message = Message.builder()
+                .setNotification(
+                    Notification.builder()
+                        .setTitle("FCM Message")
+                        .setBody("世界正關注著你")
+                        .build()
+                )
+                .setToken("Your Registration Token")
+                .build()
+
+            FirebaseMessaging.getInstance().send(message)
+            call.respond(HttpStatusCode.OK)
         }
 
         webSocket("/chat") {

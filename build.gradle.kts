@@ -23,6 +23,9 @@ dependencies {
     implementation("io.ktor:ktor-server-netty:$ktor_version")
     implementation("io.ktor:ktor-gson:$ktor_version")
     implementation("io.ktor:ktor-websockets:$ktor_version")
+
+    implementation("com.google.firebase:firebase-admin:8.0.0")
+
     implementation("ch.qos.logback:logback-classic:$logback_version")
     testImplementation("io.ktor:ktor-server-tests:$ktor_version")
 
