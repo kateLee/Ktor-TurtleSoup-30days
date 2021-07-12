@@ -145,7 +145,7 @@ fun Application.configureRouting() {
                         .setBody("世界正關注著你")
                         .build()
                 )
-                .setToken("Your Registration Token")
+                .setTopic("Puzzle")
                 .build()
 
             FirebaseMessaging.getInstance().send(message)
