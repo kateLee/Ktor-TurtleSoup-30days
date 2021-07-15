@@ -3,6 +3,8 @@ package kate.tutorial.kotlin.plugins
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseToken
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.Message
 import com.google.firebase.messaging.Notification
@@ -14,6 +16,7 @@ import io.ktor.http.cio.websocket.*
 import io.ktor.request.*
 import io.ktor.response.*
 import io.ktor.routing.*
+import io.ktor.util.AttributeKey
 import io.ktor.websocket.*
 import kate.tutorial.kotlin.exceptions.BadParamException
 import kate.tutorial.kotlin.exceptions.IllegalPuzzleIdException
@@ -78,79 +81,81 @@ fun Application.configureRouting() {
         get("/") {
             call.respond(mapOf("message" to "HELLO WORLD!"))
         }
-        get("/api/puzzles") {
-            val response = transaction {
-                Puzzle.all().with(Puzzle::author).map {
-                    PuzzleResponse(
-                        id = it.id.value,
-                        title = it.title,
-                        avatar = it.author.avatar,
-                        attendance = (0..10).random().toString() + "人",
-                        tags = it.tags
-                    )
+        authentication {
+            get("/api/puzzles") {
+                val response = transaction {
+                    Puzzle.all().with(Puzzle::author).map {
+                        PuzzleResponse(
+                            id = it.id.value,
+                            title = it.title,
+                            avatar = it.author.avatar,
+                            attendance = (0..10).random().toString() + "人",
+                            tags = it.tags
+                        )
+                    }
                 }
+                call.respond(response)
             }
-            call.respond(response)
-        }
-        post("/api/puzzles") {
-            val request = call.receive<PuzzleRequest>()
-            val puzzle = transaction {
-                Puzzle.new {
-                    author = User.all().first()
-                    title = request.title ?: throw BadParamException()
-                    description = request.description ?: throw BadParamException()
-                    tags= request.tags ?: throw BadParamException()
-                }.run {
-                    PuzzleDetailResponse(
-                        id = id.value,
-                        title = title,
-                        avatar = author.avatar,
-                        author = author.name,
-                        description = description,
-                        tags = tags
-                    )
+            post("/api/puzzles") {
+                val request = call.receive<PuzzleRequest>()
+                val puzzle = transaction {
+                    Puzzle.new {
+                        author = User.all().first()
+                        title = request.title ?: throw BadParamException()
+                        description = request.description ?: throw BadParamException()
+                        tags = request.tags ?: throw BadParamException()
+                    }.run {
+                        PuzzleDetailResponse(
+                            id = id.value,
+                            title = title,
+                            avatar = author.avatar,
+                            author = author.name,
+                            description = description,
+                            tags = tags
+                        )
+                    }
                 }
+                call.respond(puzzle)
             }
-            call.respond(puzzle)
-        }
-        get("/api/puzzles/{id}") {
-            val puzzleId = try { UUID.fromString(call.parameters["id"]) } catch (e: Exception) { throw IllegalPuzzleIdException() }
-            val puzzle = transaction {
-                Puzzle.findById(puzzleId)?.run {
-                    PuzzleDetailResponse(
-                        id = puzzleId,
-                        title = title,
-                        avatar = author.avatar,
-                        author = author.name,
-                        description = description,
-                        tags = tags
-                    )
-                } ?: throw PuzzleNotFoundException()
+            get("/api/puzzles/{id}") {
+                val puzzleId = try { UUID.fromString(call.parameters["id"]) } catch (e: Exception) { throw IllegalPuzzleIdException() }
+                val puzzle = transaction {
+                    Puzzle.findById(puzzleId)?.run {
+                        PuzzleDetailResponse(
+                            id = puzzleId,
+                            title = title,
+                            avatar = author.avatar,
+                            author = author.name,
+                            description = description,
+                            tags = tags
+                        )
+                    } ?: throw PuzzleNotFoundException()
+                }
+                call.respond(puzzle)
             }
-            call.respond(puzzle)
-        }
-        delete("/api/puzzles/{id}") {
-            val puzzleId = try { UUID.fromString(call.parameters["id"]) } catch (e: Exception) { throw IllegalPuzzleIdException() }
-            transaction {
-                Puzzle.findById(puzzleId)?.delete() ?: throw PuzzleNotFoundException()
+            delete("/api/puzzles/{id}") {
+                val puzzleId = try { UUID.fromString(call.parameters["id"]) } catch (e: Exception) { throw IllegalPuzzleIdException() }
+                transaction {
+                    Puzzle.findById(puzzleId)?.delete() ?: throw PuzzleNotFoundException()
+                }
+                call.respond(HttpStatusCode.NoContent)
             }
-            call.respond(HttpStatusCode.NoContent)
         }
 
-        get("/api/messages") {
-            val message: Message = Message.builder()
-                .setNotification(
-                    Notification.builder()
-                        .setTitle("FCM Message")
-                        .setBody("世界正關注著你")
-                        .build()
-                )
-                .setTopic("Puzzle")
-                .build()
-
-            FirebaseMessaging.getInstance().send(message)
-            call.respond(HttpStatusCode.OK)
-        }
+//        get("/api/messages") {
+//            val message: Message = Message.builder()
+//                .setNotification(
+//                    Notification.builder()
+//                        .setTitle("FCM Message")
+//                        .setBody("世界正關注著你")
+//                        .build()
+//                )
+//                .setTopic("Puzzle")
+//                .build()
+//
+//            FirebaseMessaging.getInstance().send(message)
+//            call.respond(HttpStatusCode.OK)
+//        }
 
         webSocket("/chat") {
             for (frame in incoming) {
@@ -164,4 +169,29 @@ fun Application.configureRouting() {
             }
         }
     }
+}
+val UserAttributeKey = AttributeKey<FirebaseToken>("UserAttributeKey")
+inline fun Route.authentication(callback: Route.() -> Unit): Route {
+    // With createChild, we create a child node for this received Route
+    val routeAuthentication = this.createChild(object : RouteSelector() {
+        override fun evaluate(context: RoutingResolveContext, segmentIndex: Int): RouteSelectorEvaluation =
+            RouteSelectorEvaluation.Constant
+    })
+
+    // Intercepts calls from this route at the features step
+    routeAuthentication.intercept(ApplicationCallPipeline.Features) {
+        call.request.headers["Authorization"]?.replace("Bearer ", "")?.let { idToken ->
+            FirebaseAuth.getInstance().verifyIdToken(idToken).apply {
+                this@authentication.attributes.put(UserAttributeKey, this)
+            }
+        } ?: run {
+            call.respond(HttpStatusCode.Unauthorized)
+            return@intercept finish()
+        }
+    }
+
+    // Configure this route with the block provided by the user
+    callback(routeAuthentication)
+
+    return routeAuthentication
 }
