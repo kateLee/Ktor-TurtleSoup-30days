@@ -8,18 +8,24 @@ import io.ktor.http.cio.websocket.*
 import io.ktor.request.*
 import io.ktor.response.*
 import io.ktor.routing.*
+import io.ktor.sessions.*
+import io.ktor.util.*
 import io.ktor.websocket.*
+import kate.tutorial.kotlin.chats.ChatServer
 import kate.tutorial.kotlin.exceptions.BadParamException
 import kate.tutorial.kotlin.exceptions.IllegalPuzzleIdException
 import kate.tutorial.kotlin.exceptions.PuzzleNotFoundException
 import kate.tutorial.kotlin.puzzle.*
 import kate.tutorial.kotlin.user.User
+import kotlinx.coroutines.channels.consumeEach
 import org.jetbrains.exposed.dao.with
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.Duration
 import java.util.*
+
+private val chatServer = ChatServer()
 
 fun Application.configureRouting() {
     // Starting point for a Ktor app:
@@ -41,6 +47,17 @@ fun Application.configureRouting() {
         timeout = Duration.ofSeconds(15)
         maxFrameSize = Long.MAX_VALUE // Disabled (max value). The connection will be closed if surpassed this length.
         masking = false
+    }
+    // This enables the use of sessions to keep information between requests/refreshes of the browser.
+    install(Sessions) {
+        cookie<ChatSession>("SESSION")
+    }
+
+    // This adds an interceptor that will create a specific session in each request if no session is available already.
+    intercept(ApplicationCallPipeline.Features) {
+        if (call.sessions.get<ChatSession>() == null) {
+            call.sessions.set(ChatSession(generateNonce()))
+        }
     }
 
     Database.connect("jdbc:h2:mem:default;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver")
@@ -125,15 +142,44 @@ fun Application.configureRouting() {
         }
 
         webSocket("/chat") {
-            for (frame in incoming) {
-                if (frame is Frame.Text)  {
-                    val text = frame.readText()
-                    outgoing.send(Frame.Text("[user]: $text"))
-                    if (text.equals("bye", ignoreCase = true)) {
-                        close(CloseReason(CloseReason.Codes.NORMAL, "Client said BYE"))
+            val session = call.sessions.get<ChatSession>()
+
+            // We check that we actually have a session. We should always have one,
+            // since we have defined an interceptor before to set one.
+            if (session == null) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "No session"))
+                return@webSocket
+            }
+
+            // We notify that a member joined by calling the server handler [memberJoin]
+            // This allows to associate the session id to a specific WebSocket connection.
+            chatServer.memberJoin(session.id, this)
+
+            try {
+                // We starts receiving messages (frames).
+                // Since this is a coroutine. This coroutine is suspended until receiving frames.
+                // Once the connection is closed, this consumeEach will finish and the code will continue.
+                incoming.consumeEach { frame ->
+                    // Frames can be [Text], [Binary], [Ping], [Pong], [Close].
+                    // We are only interested in textual messages, so we filter it.
+                    if (frame is Frame.Text) {
+                        // Now it is time to process the text sent from the user.
+                        // At this point we have context about this connection, the session, the text and the server.
+                        // So we have everything we need.
+                        chatServer.message(session.id, frame.readText())
                     }
                 }
+            } finally {
+                // Either if there was an error, of it the connection was closed gracefully.
+                // We notify the server that the member left.
+                chatServer.memberLeft(session.id, this)
             }
         }
     }
 }
+
+/**
+ * A chat session is identified by a unique nonce ID. This nonce comes from a secure random source.
+ */
+data class ChatSession(val id: String)
+
